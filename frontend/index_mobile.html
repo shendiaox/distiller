@@ -1,0 +1,806 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Distiller — 万物可蒸馏</title>
+    <link rel="stylesheet" href="css/style.css">
+    <script src="js/bridge_mobile.js"></script>
+</head>
+<body>
+
+<div id="app">
+    <!-- 标题栏 -->
+    <header id="topbar">
+        <button id="btn-menu" onclick="toggleSidebar()">☰</button>
+        <span class="logo">⚗️ Distiller</span>
+        <span class="subtitle">万物可蒸馏</span>
+        <button id="btn-clear-chat" onclick="clearChat()" title="清空对话">🗑️</button>
+        <button id="btn-settings" onclick="toggleSettings()">⚙️ 设置</button>
+    </header>
+
+    <div id="main-layout">
+        <!-- 侧边栏 -->
+        <aside id="sidebar">
+            <div class="sidebar-section">
+                <div class="section-header">
+                    <span>📁 知识库</span>
+                    <button class="btn-mini" onclick="showNewKBDialog()" title="新建知识库">+</button>
+                </div>
+                <div id="kb-list"></div>
+            </div>
+            <div class="sidebar-section">
+                <div class="section-header">
+                    <span>📄 文档</span>
+                    <button class="btn-mini" onclick="togglePastePanel()" title="粘贴文本">+</button>
+                </div>
+                <div class="upload-row">
+                    <button class="btn-upload" onclick="uploadFile()">📎 上传文件</button>
+                </div>
+                <div id="doc-list"><span class="hint">选择知识库后查看文档</span></div>
+                <p id="upload-status" style="font-size:11px;color:#8b8b96;padding:4px 10px;"></p>
+            </div>
+            <div class="sidebar-section">
+                <div class="section-header">
+                    <span>🎯 Skills</span>
+                    <button class="btn-mini" onclick="showSkillDialog()" title="新建 Skill">+</button>
+                </div>
+                <div id="skill-list"><span class="hint">加载中...</span></div>
+            </div>
+            <div class="sidebar-section">
+                <button class="btn-template" onclick="showPersonaTemplate()">📋 人物画像模板</button>
+            </div>
+            <div class="sidebar-section">
+                <div class="section-header"><span>🔍 全网搜索</span></div>
+                <div class="search-row">
+                    <input id="search-input" placeholder="搜索人名/关键词..." onkeydown="if(event.key==='Enter') doSearch()" />
+                    <button class="btn-mini" onclick="doSearch()">→</button>
+                </div>
+                <div id="search-results" style="max-height:240px;overflow-y:auto;"></div>
+                <div id="search-actions" style="display:none;padding:4px 10px;">
+                    <button class="btn-upload" onclick="ingestSelectedUrls()">📥 录入选中结果</button>
+                </div>
+                <p id="search-status" style="font-size:11px;color:#8b8b96;padding:4px 10px;"></p>
+            </div>
+        </aside>
+
+        <!-- 对话区 -->
+        <main id="chat-area">
+            <div id="generate-bar" style="display:none;">
+                <input id="generate-request" placeholder="输入创作要求，例如：写一首关于江南雨巷的中国风歌词..." />
+                <button id="btn-generate" onclick="runGenerate()">🎨 生成</button>
+            </div>
+            <div id="messages">
+                <div class="msg system-msg welcome">
+                    <h3>⚗️ 万物可蒸馏</h3>
+                    <p>三步上手：① ⚙️ 设置 API Key → ② 📁 新建知识库录入资料 → ③ 💬 开始对话</p>
+                    <p style="font-size:12px;color:#5a5a60;">支持贴文本 · 传文件 · 全网搜索 · 蒸馏人物风格 · 角色扮演聊天</p>
+                </div>
+            </div>
+            <div id="distill-bar">
+                <select id="distill-mode" onchange="onModeChange()">
+                    <option value="">💬 普通对话</option>
+                </select>
+                <input id="distill-instruction" placeholder="额外蒸馏要求（可选）" style="display:none;" />
+                <button id="btn-distill" onclick="runDistill()" style="display:none;">⚗️ 开始蒸馏</button>
+            </div>
+            <div id="input-row" class="chat-input-row">
+                <textarea id="input-box" rows="1" placeholder="输入消息，Enter 发送，Shift+Enter 换行..."
+                    onkeydown="onInputKeydown(event)"></textarea>
+                <button id="btn-web" onclick="sendWithSearch()" title="联网搜索后回答">🔍</button>
+                <button id="btn-send" onclick="send()">发送</button>
+            </div>
+        </main>
+    </div>
+
+    <!-- 粘贴文本弹窗 -->
+    <div id="paste-overlay" class="overlay hidden" onclick="overlayClick(event, 'paste-overlay')">
+        <div class="modal wide" onclick="event.stopPropagation()">
+            <h2>📝 录入文本到知识库</h2>
+            <div class="form-group"><label>标题</label><input id="paste-title" placeholder="例如：马斯克 2018 访谈记录" /></div>
+            <div class="form-group"><label>文本内容</label><textarea id="paste-content" rows="12" placeholder="在此粘贴文本内容...&#10;&#10;支持中英文混合，会自动分块处理。"></textarea></div>
+            <div class="modal-buttons">
+                <button class="btn-primary" onclick="ingestPaste()">⚡ 录入知识库</button>
+                <button onclick="togglePastePanel()">取消</button>
+            </div>
+            <p id="paste-status" style="margin-top:10px;font-size:13px;color:#8b8b96;"></p>
+        </div>
+    </div>
+
+    <!-- 新建知识库弹窗 -->
+    <div id="newkb-overlay" class="overlay hidden" onclick="overlayClick(event, 'newkb-overlay')">
+        <div class="modal" onclick="event.stopPropagation()">
+            <h2>📁 新建知识库</h2>
+            <div class="form-group"><label>名称</label><input id="newkb-name" placeholder="例如：马斯克商业研究" /></div>
+            <div class="form-group"><label>描述（可选）</label><input id="newkb-desc" placeholder="简要描述知识库用途" /></div>
+            <div class="modal-buttons">
+                <button class="btn-primary" onclick="createKB()">创建</button>
+                <button onclick="hideNewKBDialog()">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Skill 编辑弹窗 -->
+    <div id="skill-overlay" class="overlay hidden" onclick="overlayClick(event, 'skill-overlay')">
+        <div class="modal wide" onclick="event.stopPropagation()">
+            <h2 id="skill-modal-title">🎯 新建 Skill</h2>
+            <input type="hidden" id="skill-edit-id" value="" />
+            <div class="form-group"><label>名称</label><input id="skill-name" placeholder="例如：商业模式分析" /></div>
+            <div class="form-group"><label>类型</label><select id="skill-type"><option value="template">📋 分析模板</option><option value="persona">👤 AI 角色</option></select></div>
+            <div class="form-group"><label>描述</label><input id="skill-desc" placeholder="简要描述这个 Skill 的用途" /></div>
+            <div class="form-group"><label>System Prompt</label><textarea id="skill-prompt" rows="6" placeholder="定义 AI 应该如何分析和回答..."></textarea></div>
+            <div class="modal-buttons">
+                <button class="btn-primary" onclick="saveSkill()">💾 保存</button>
+                <button id="btn-delete-skill" class="btn-danger" onclick="deleteSkill()" style="display:none;">🗑️ 删除</button>
+                <button onclick="hideSkillDialog()">取消</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 人物画像模板弹窗 -->
+    <div id="template-overlay" class="overlay hidden" onclick="overlayClick(event, 'template-overlay')">
+        <div class="modal note-modal" onclick="event.stopPropagation()">
+            <div class="note-toolbar">
+                <h2>📋 人物画像采集模板</h2>
+                <div>
+                    <button class="btn-note" onclick="copyTemplate()" style="margin-right:8px;">📋 一键复制</button>
+                    <button onclick="hideTemplate()">✕</button>
+                </div>
+            </div>
+            <div id="template-content" style="flex:1;overflow-y:auto;padding-right:8px;">
+                <div class="workflow-hint">
+                    <strong>🔄 推荐工作流：豆包 + Distiller 协作</strong>
+                    <ol>
+                        <li>点「📋 一键复制」复制下方模板</li>
+                        <li>粘贴到<strong>豆包</strong>，附上人物资料让豆包逐项填写</li>
+                        <li>豆包填好后，复制全文粘贴到 Distiller 知识库</li>
+                        <li>用「💬 聊天方式」蒸馏 → 保存为角色 → 开始聊天</li>
+                    </ol>
+                </div>
+                <div id="template-md" class="markdown-body"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 蒸馏笔记弹窗 -->
+    <div id="note-overlay" class="overlay hidden" onclick="overlayClick(event, 'note-overlay')">
+        <div class="modal note-modal" onclick="event.stopPropagation()">
+            <div class="note-toolbar">
+                <h2>📝 蒸馏笔记</h2>
+                <button onclick="hideNote()">✕</button>
+            </div>
+            <div id="note-content" class="markdown-body"></div>
+        </div>
+    </div>
+
+    <!-- 设置弹窗 -->
+    <div id="settings-overlay" class="overlay hidden" onclick="overlayClick(event, 'settings-overlay')">
+        <div class="modal" onclick="event.stopPropagation()">
+            <h2>⚙️ 设置</h2>
+            <div class="form-group">
+                <label>DeepSeek API Key</label>
+                <input id="setting-key" type="password" placeholder="sk-..." />
+                <div style="margin-top:4px">
+                    <button onclick="saveApiKey()">💾 保存</button>
+                    <button onclick="testConnection()" id="btn-test">🔗 测试连接</button>
+                    <span id="test-result"></span>
+                </div>
+            </div>
+            <div class="form-group">
+                <label>模型选择</label>
+                <select id="setting-model">
+                    <option value="deepseek-chat">deepseek-chat（通用对话，速度快）</option>
+                    <option value="deepseek-reasoner">deepseek-reasoner（深度推理，复杂分析）</option>
+                </select>
+                <span style="font-size:11px;color:#5a5a60;">DeepSeek API Key 通用，可切换不同模型</span>
+            </div>
+            <button class="btn-close" onclick="hideSettings()">关闭</button>
+        </div>
+    </div>
+</div>
+
+<script>
+// ===== 通用工具 =====
+function toErr(e) {
+    if (!e) return '未知错误';
+    if (typeof e === 'string') return e;
+    if (e.message) return e.message;
+    if (e.error) return toErr(e.error);
+    try { return JSON.stringify(e); } catch(_) { return String(e); }
+}
+
+// ===== 状态 =====
+let chatHistory = [];
+let currentKB = null;
+let kbs = [];
+let streamMsgDiv = null;  // 流式输出正在写入的消息 div
+let isStreaming = false;
+
+// ===== 初始化 =====
+document.addEventListener('DOMContentLoaded', async () => {
+    try { await Distiller.hello(); } catch (err) { addMessage('system', '❌ 后端连接失败: ' + err.message); }
+    await refreshKBList();
+    await loadSkills();
+    await loadDistillModes();
+});
+
+// ===== 流式 token 接收（Python 回调） =====
+function onStreamToken(token, isFirst, isDone) {
+    if (isFirst) {
+        streamMsgDiv = document.createElement('div');
+        streamMsgDiv.className = 'msg ai-msg markdown-body';
+        streamMsgDiv.dataset.streaming = '1';
+        streamMsgDiv.innerHTML = '<div class="md-content"></div><span class="typing-cursor">▌</span>';
+        document.getElementById('messages').appendChild(streamMsgDiv);
+    }
+    if (streamMsgDiv) {
+        const content = streamMsgDiv.querySelector('.md-content');
+        content.textContent += token;
+        const cursor = streamMsgDiv.querySelector('.typing-cursor');
+        if (cursor && isDone) cursor.remove();
+        scrollToBottom();
+    }
+    if (isDone) {
+        if (streamMsgDiv) {
+            const rawText = streamMsgDiv.querySelector('.md-content').textContent;
+            streamMsgDiv.innerHTML = renderMarkdown(rawText);
+            streamMsgDiv.dataset.streaming = '0';
+            chatHistory.push({role: 'assistant', content: rawText});
+        }
+        streamMsgDiv = null;
+        isStreaming = false;
+        document.getElementById('btn-send').disabled = false;
+        document.getElementById('btn-web').disabled = false;
+    }
+}
+
+// ===== 弹窗控制 =====
+function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
+function overlayClick(e, id) { if (e.target.id === id) document.getElementById(id).classList.add('hidden'); }
+function toggleSettings() { document.getElementById('settings-overlay').classList.toggle('hidden'); }
+function hideSettings() { document.getElementById('settings-overlay').classList.add('hidden'); }
+function togglePastePanel() { document.getElementById('paste-overlay').classList.toggle('hidden'); }
+function showNewKBDialog() { document.getElementById('newkb-overlay').classList.remove('hidden'); }
+function hideNewKBDialog() { document.getElementById('newkb-overlay').classList.add('hidden'); }
+
+// ===== 设置 =====
+async function saveApiKey() {
+    const key = document.getElementById('setting-key').value.trim();
+    if (!key) { document.getElementById('test-result').textContent = '请输入 API Key'; return; }
+    await Distiller.setApiKey(key);
+    document.getElementById('test-result').textContent = '✅ 已保存';
+}
+async function testConnection() {
+    const btn = document.getElementById('btn-test'), result = document.getElementById('test-result');
+    btn.disabled = true; result.textContent = '正在测试...';
+    try {
+        const res = await Distiller.testConnection();
+        result.textContent = res.ok ? ('✅ 连接成功: ' + res.reply) : ('❌ ' + res.error);
+    } catch (err) { result.textContent = '❌ ' + toErr(err); }
+    btn.disabled = false;
+}
+
+// ===== 知识库 =====
+async function refreshKBList() {
+    try {
+        kbs = await Distiller.listKBs();
+        const el = document.getElementById('kb-list');
+        if (!kbs.length) { el.innerHTML = '<span class="hint">暂无知识库</span>'; return; }
+        el.innerHTML = kbs.map(kb =>
+            `<div class="kb-item${currentKB?.id === kb.id ? ' active' : ''}" data-id="${kb.id}">
+                <span class="kb-name" onclick="selectKB(${kb.id})">📁 ${escHtml(kb.name)}</span>
+                <span class="kb-actions">
+                    <button class="btn-tiny" onclick="event.stopPropagation();renameKB(${kb.id},'${escHtml(kb.name).replace(/'/g,"\\'")}')" title="重命名">✏️</button>
+                    <button class="btn-tiny" onclick="event.stopPropagation();deleteKBClick(${kb.id},'${escHtml(kb.name).replace(/'/g,"\\'")}')" title="删除">🗑️</button>
+                </span>
+            </div>`).join('');
+    } catch (err) { console.error(err); }
+}
+async function selectKB(id) {
+    currentKB = kbs.find(k => k.id === id);
+    chatHistory = [];
+    document.getElementById('messages').innerHTML = '';
+    addMessage('system', `已切换到知识库「${currentKB.name}」，对话将基于此知识库内容回答。`);
+    document.querySelectorAll('.kb-item').forEach(el => el.classList.remove('active'));
+    document.querySelector(`.kb-item[data-id="${id}"]`)?.classList.add('active');
+    await refreshDocList();
+}
+async function renameKB(id, oldName) {
+    const newName = prompt('重命名知识库：', oldName);
+    if (!newName || newName === oldName) return;
+    try {
+        await Distiller.renameKB(id, newName);
+        await refreshKBList();
+    } catch (err) { alert('重命名失败: ' + toErr(err)); }
+}
+async function deleteKBClick(id, name) {
+    if (!confirm(`确定删除知识库「${name}」？\n\n这将永久删除其中的所有文档和向量数据，无法恢复。`)) return;
+    try {
+        await Distiller.deleteKB(id);
+        if (currentKB?.id === id) { currentKB = null; document.getElementById('messages').innerHTML = ''; chatHistory = []; }
+        await refreshKBList();
+        document.getElementById('doc-list').innerHTML = '<span class="hint">选择知识库后查看文档</span>';
+    } catch (err) { alert('删除失败: ' + toErr(err)); }
+}
+
+async function deleteDocClick(docId, title) {
+    if (!confirm(`确定删除文档「${title}」？`)) return;
+    try {
+        await Distiller.deleteDoc(docId);
+        await refreshDocList();
+    } catch (err) { alert('删除失败: ' + toErr(err)); }
+}
+
+async function refreshDocList() {
+    if (!currentKB) return;
+    try {
+        const docs = await Distiller.getKBDocs(currentKB.id);
+        const stats = await Distiller.getKBStats(currentKB.id);
+        const el = document.getElementById('doc-list');
+        if (!docs.length) { el.innerHTML = '<span class="hint">暂未录入文档<br>点击 + 或上传文件</span>'; return; }
+        el.innerHTML = `<div class="stats">📊 ${stats.document_count}篇 · ${stats.chunk_count}块 · ${stats.vector_count}向量</div>`
+            + docs.map(d => `<div class="doc-item">
+                <span>📄 ${escHtml(d.title)}</span>
+                <span class="doc-meta">${d.chunk_count}块 · ${d.created_at?.slice(0,16)||''}
+                <button class="btn-tiny" onclick="deleteDocClick(${d.id},'${escHtml(d.title).replace(/'/g,"\\'")}')" title="删除文档">🗑️</button></span>
+            </div>`).join('');
+    } catch (err) { console.error(err); }
+}
+async function createKB() {
+    const name = document.getElementById('newkb-name').value.trim();
+    if (!name) return;
+    try {
+        const res = await Distiller.createKB(name, document.getElementById('newkb-desc').value.trim());
+        if (res.ok) { hideNewKBDialog(); document.getElementById('newkb-name').value=''; document.getElementById('newkb-desc').value=''; await refreshKBList(); await selectKB(res.id); }
+    } catch (err) { alert('创建失败: ' + err.message); }
+}
+
+// ===== 录入 =====
+async function ingestPaste() {
+    if (!currentKB) { alert('请先选择知识库'); return; }
+    const title = document.getElementById('paste-title').value.trim();
+    const text = document.getElementById('paste-content').value.trim();
+    if (!title) { alert('请输入标题'); return; }
+    if (!text) { alert('请输入文本内容'); return; }
+    const st = document.getElementById('paste-status'); st.textContent = '正在处理...';
+    try {
+        const res = await Distiller.ingestText(currentKB.id, title, text);
+        st.textContent = res.ok ? `✅ 录入完成！${res.chunk_count} 个文本块` : ('❌ '+toErr(res));
+        if (res.ok) { document.getElementById('paste-content').value=''; document.getElementById('paste-title').value=''; await refreshDocList(); }
+    } catch (err) { st.textContent = '❌ '+toErr(err); }
+}
+async function uploadFile() {
+    if (!currentKB) { alert('请先选择知识库'); return; }
+    const st = document.getElementById('upload-status'); st.textContent = '选择文件中...';
+    try {
+        const file = await Distiller.selectFile();
+        if (!file.ok) { st.textContent=''; return; }
+        st.textContent = '解析中: '+file.name+'...';
+        const res = await Distiller.ingestFile(currentKB.id, file.path, file.name);
+        st.textContent = res.ok ? `✅ ${file.name} (${res.chunk_count}块)` : ('❌ '+toErr(res));
+        if (res.ok) await refreshDocList();
+    } catch (err) { st.textContent = '❌ '+toErr(err); }
+    setTimeout(()=>{st.textContent='';}, 6000);
+}
+
+// ===== 蒸馏 =====
+let _lastStyleReport = '';
+
+async function loadDistillModes() {
+    try {
+        const modes = await Distiller.getDistillModes();
+        const sel = document.getElementById('distill-mode');
+        modes.forEach(m => { const o = document.createElement('option'); o.value=m.key; o.textContent=m.icon+' '+m.name; sel.appendChild(o); });
+    } catch (err) { console.error(err); }
+}
+function onModeChange() {
+    const mode = document.getElementById('distill-mode').value;
+    const inst = document.getElementById('distill-instruction'), btn = document.getElementById('btn-distill');
+    const chatRow = document.querySelector('.chat-input-row');
+    const genBar = document.getElementById('generate-bar');
+    if (!mode) { inst.style.display='none'; btn.style.display='none'; chatRow.style.display='flex'; genBar.style.display='none'; }
+    else { inst.style.display='inline-block'; btn.style.display='inline-block'; chatRow.style.display='none'; genBar.style.display='none'; }
+}
+async function runDistill() {
+    if (!currentKB) { alert('请先选择知识库'); return; }
+    const mode = document.getElementById('distill-mode').value;
+    if (!mode) return;
+    const btn = document.getElementById('btn-distill'); btn.disabled=true; btn.textContent='蒸馏中...';
+    const modeLabel = document.getElementById('distill-mode').selectedOptions[0].textContent;
+    addMessage('system', `⚗️ 开始「${modeLabel}」蒸馏...`);
+    try {
+        const res = await Distiller.distill(currentKB.id, mode, document.getElementById('distill-instruction').value.trim());
+        if (res.ok) {
+            _lastDistillReport = res.report;
+            _lastDistillMode = mode;
+            const div = addMessage('system', '');
+            div.innerHTML = `✅ 蒸馏完成 — 基于 ${res.sources_count} 个资料块 &nbsp;
+                <button class="btn-note" onclick="showNote()">📝 查看</button>
+                <button class="btn-save-skill" onclick="saveAsSkill('${mode}')">💾 保存为角色</button>`;
+            if (mode === 'style') {
+                _lastStyleReport = res.report;
+                document.getElementById('generate-bar').style.display = 'flex';
+            } else if (mode === 'chat_style') {
+                _lastStyleReport = res.report;
+                document.getElementById('generate-bar').style.display = 'none';
+            }
+        } else { addMessage('system', '❌ ' + res.error); }
+    } catch (err) { addMessage('system', '❌ ' + err.message); }
+    btn.disabled=false; btn.textContent='⚗️ 开始蒸馏';
+}
+
+let _lastDistillReport = '';
+let _lastDistillMode = '';
+
+async function saveAsSkill(mode) {
+    if (!_lastDistillReport) return;
+    const modeNames = { persona: '人物方法论', domain: '领域专业知识', style: '风格特征', chat_style: '聊天方式' };
+    const modeName = modeNames[mode] || '';
+    const name = prompt('为这个角色取个名字：', currentKB?.name + '角色');
+    if (!name) return;
+    try {
+        const res = await Distiller.saveDistillAsSkill(name, _lastDistillReport, modeName);
+        if (res.ok) {
+            addMessage('system', `✅ 已保存为角色「${name}」，在侧边栏 Skills 中点击即可使用。`);
+            await loadSkills();
+        } else {
+            addMessage('system', '❌ 保存失败: ' + res.error);
+        }
+    } catch (err) { addMessage('system', '❌ ' + err.message); }
+}
+
+function showNote() {
+    document.getElementById('note-content').innerHTML = renderMarkdown(_lastDistillReport);
+    document.getElementById('note-overlay').classList.remove('hidden');
+}
+function hideNote() { document.getElementById('note-overlay').classList.add('hidden'); }
+
+// ===== 人物画像模板 =====
+let _templateText = '';
+async function showPersonaTemplate() {
+    const overlay = document.getElementById('template-overlay');
+    overlay.classList.remove('hidden');
+    try {
+        _templateText = await Distiller.getPersonaTemplate();
+        document.getElementById('template-md').innerHTML = renderMarkdown(_templateText);
+    } catch (err) {
+        document.getElementById('template-md').innerHTML = '<p>加载失败: ' + toErr(err) + '</p>';
+    }
+}
+function hideTemplate() { document.getElementById('template-overlay').classList.add('hidden'); }
+async function copyTemplate() {
+    if (!_templateText) {
+        try { _templateText = await Distiller.getPersonaTemplate(); } catch (e) {}
+    }
+    try {
+        await navigator.clipboard.writeText(_templateText);
+    } catch (e) {
+        const ta = document.createElement('textarea');
+        ta.value = _templateText; ta.style.position='fixed'; ta.style.left='-9999px';
+        document.body.appendChild(ta); ta.select();
+        document.execCommand('copy'); document.body.removeChild(ta);
+    }
+    showToast('✅ 模板已复制，去粘贴给豆包吧！');
+}
+function showToast(msg) {
+    const toast = document.createElement('div');
+    toast.className = 'toast-msg';
+    toast.textContent = msg;
+    document.body.appendChild(toast);
+    setTimeout(() => { toast.remove(); }, 2500);
+}
+
+async function runGenerate() {
+    const request = document.getElementById('generate-request').value.trim();
+    if (!request) return;
+    if (!_lastStyleReport) { addMessage('system', '请先运行风格蒸馏'); return; }
+    const btn = document.getElementById('btn-generate'); btn.disabled=true; btn.textContent='生成中...';
+    addMessage('user', '🎨 ' + request);
+    addMessage('system', '正在基于蒸馏的风格特征生成...');
+    try {
+        const res = await Distiller.distillGenerate(currentKB.id, _lastStyleReport, request);
+        if (res.ok) { addMessage('ai', res.generated, false, true); addMessage('system', '✅ 风格生成完成'); }
+        else { addMessage('system', '❌ ' + res.error); }
+    } catch (err) { addMessage('system', '❌ ' + err.message); }
+    btn.disabled=false; btn.textContent='🎨 生成';
+}
+
+// ===== Skills =====
+let skills = [];
+let activeSkillId = null;
+
+async function loadSkills() {
+    try {
+        skills = await Distiller.listSkills();
+        const el = document.getElementById('skill-list');
+        if (!skills.length) { el.innerHTML='<span class="hint">暂无 Skills</span>'; return; }
+        el.innerHTML = skills.map(s =>
+            `<div class="skill-item${activeSkillId===s.id?' active':''}" onclick="selectSkill(${s.id})" data-id="${s.id}">
+                <span>${s.type==='persona'?'👤':'📋'} ${escHtml(s.name)}</span>
+                <span class="skill-actions">
+                    <button class="btn-tiny" onclick="event.stopPropagation();editSkill(${s.id})" title="编辑">✏️</button>
+                </span>
+            </div>`).join('');
+    } catch (err) { console.error(err); }
+}
+async function selectSkill(id) {
+    if (activeSkillId === id) { activeSkillId = null; addMessage('system', '已退出角色，恢复默认对话模式。'); }
+    else {
+        const s = skills.find(sk => sk.id === id);
+        activeSkillId = id;
+        // 选角色时自动切回对话模式
+        document.getElementById('distill-mode').value = '';
+        onModeChange();
+        if (s.type === 'persona') {
+            addMessage('system', `现在开始和「${s.name}」聊天。直接说话就行，像跟真人聊天一样。`);
+        } else {
+            addMessage('system', `已启用分析模板「${s.name}」。`);
+        }
+    }
+    await loadSkills();
+}
+function showSkillDialog() {
+    document.getElementById('skill-modal-title').textContent = '🎯 新建 Skill';
+    document.getElementById('skill-edit-id').value = '';
+    document.getElementById('skill-name').value = '';
+    document.getElementById('skill-type').value = 'template';
+    document.getElementById('skill-desc').value = '';
+    document.getElementById('skill-prompt').value = '';
+    document.getElementById('btn-delete-skill').style.display = 'none';
+    document.getElementById('skill-overlay').classList.remove('hidden');
+}
+function hideSkillDialog() { document.getElementById('skill-overlay').classList.add('hidden'); }
+async function editSkill(id) {
+    const s = await Distiller.getSkill(id);
+    if (!s) return;
+    document.getElementById('skill-modal-title').textContent = '✏️ 编辑 Skill';
+    document.getElementById('skill-edit-id').value = s.id;
+    document.getElementById('skill-name').value = s.name;
+    document.getElementById('skill-type').value = s.type;
+    document.getElementById('skill-desc').value = s.description||'';
+    document.getElementById('skill-prompt').value = s.system_prompt;
+    document.getElementById('btn-delete-skill').style.display = s.is_default ? 'none' : 'inline-block';
+    document.getElementById('skill-overlay').classList.remove('hidden');
+}
+async function saveSkill() {
+    const editId = document.getElementById('skill-edit-id').value;
+    const name = document.getElementById('skill-name').value.trim();
+    const type = document.getElementById('skill-type').value;
+    const prompt = document.getElementById('skill-prompt').value.trim();
+    const desc = document.getElementById('skill-desc').value.trim();
+    if (!name||!prompt) { alert('名称和 System Prompt 不能为空'); return; }
+    try {
+        if (editId) { await Distiller.updateSkill(parseInt(editId), name, prompt, desc); }
+        else { await Distiller.createSkill(name, type, prompt, desc); }
+        hideSkillDialog();
+        await loadSkills();
+    } catch (err) { alert('保存失败: '+err.message); }
+}
+async function deleteSkill() {
+    const editId = document.getElementById('skill-edit-id').value;
+    if (!editId || !confirm('确定删除这个 Skill？')) return;
+    try {
+        const res = await Distiller.deleteSkill(parseInt(editId));
+        if (res.ok) { hideSkillDialog(); await loadSkills(); }
+        else alert(toErr(res));
+    } catch (err) { alert('删除失败: '+err.message); }
+}
+
+// ===== 搜索 =====
+let searchResultData = [];
+
+async function doSearch() {
+    const query = document.getElementById('search-input').value.trim();
+    if (!query) return;
+    const st = document.getElementById('search-status'); st.textContent = '搜索中...';
+    document.getElementById('search-results').innerHTML = '';
+    document.getElementById('search-actions').style.display = 'none';
+    searchResultData = [];
+    try {
+        const res = await Distiller.webSearch(query, 10);
+        if (!res.ok) { st.textContent = '❌ '+toErr(res); return; }
+        st.textContent = `找到 ${res.results.length} 条结果 (${res.engine||'搜索'})`;
+        if (!res.results.length) return;
+        searchResultData = res.results;
+        document.getElementById('search-results').innerHTML = res.results.map((r, i) =>
+            `<label class="search-item"><input type="checkbox" value="${i}" onchange="onSearchCheck()" />
+            <div><strong>${escHtml(r.title)}</strong><span class="sr-url">${escHtml(r.href)}</span></div></label>`
+        ).join('');
+        document.getElementById('search-actions').style.display = 'block';
+    } catch (err) { st.textContent = '❌ '+toErr(err); }
+}
+
+function onSearchCheck() {
+    const checked = document.querySelectorAll('#search-results input:checked').length;
+    document.getElementById('search-actions').style.display = checked > 0 ? 'block' : 'none';
+}
+
+async function ingestSelectedUrls() {
+    if (!currentKB) { alert('请先选择知识库'); return; }
+    const checked = document.querySelectorAll('#search-results input:checked');
+    if (!checked.length) return;
+    const urls = Array.from(checked).map(cb => searchResultData[parseInt(cb.value)].href);
+    const st = document.getElementById('search-status'); st.textContent = `抓取 ${urls.length} 个页面...`;
+    try {
+        const res = await Distiller.fetchAndIngest(currentKB.id, urls);
+        const ok = res.results.filter(r => r.ok).length;
+        st.textContent = `✅ ${ok}/${urls.length} 个页面已录入知识库`;
+        await refreshDocList();
+        document.querySelectorAll('#search-results input:checked').forEach(cb => cb.checked = false);
+    } catch (err) { st.textContent = '❌ '+toErr(err); }
+}
+
+// ===== 对话 =====
+function onInputKeydown(e) {
+    if (e.key==='Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+}
+async function send() {
+    if (isStreaming) return;
+    const box = document.getElementById('input-box');
+    const text = box.value.trim();
+    if (!text) return;
+    box.value=''; box.style.height='auto';
+    addMessage('user', text);
+    chatHistory.push({role:'user', content:text});
+
+    isStreaming = true;
+    document.getElementById('btn-send').disabled = true;
+    document.getElementById('btn-web').disabled = true;
+
+    const kbId = currentKB ? currentKB.id : null;
+    try {
+        await Distiller.sendMessageStream(text, chatHistory.slice(0,-1), kbId, activeSkillId);
+    } catch (err) {
+        onStreamToken('\n\n❌ 请求失败: '+err.message, true, true);
+    }
+}
+async function sendWithSearch() {
+    const box = document.getElementById('input-box');
+    const text = box.value.trim();
+    if (!text) return;
+    box.value=''; box.style.height='auto';
+
+    addMessage('user', '🔍 ' + text);
+    addMessage('system', '正在联网搜索...');
+
+    try {
+        const searchRes = await Distiller.webSearch(text, 5);
+        if (searchRes.ok && searchRes.results.length > 0) {
+            // 取前 3 条，抓取内容，拼到消息里
+            const urls = searchRes.results.slice(0, 3).map(r => r.href);
+            let context = '【联网搜索结果】\n';
+            searchRes.results.slice(0, 3).forEach((r, i) => {
+                context += `${i+1}. ${r.title}\n   ${r.body}\n`;
+            });
+
+            const msgDiv = addMessage('system', '');
+            msgDiv.innerHTML = `已搜索到 ${searchRes.results.length} 条结果，正在基于搜索结果回答...`;
+
+            chatHistory.push({role:'user', content: `（用户通过联网搜索查询）${text}\n\n${context}`});
+
+            isStreaming = true;
+            document.getElementById('btn-send').disabled = true;
+            document.getElementById('btn-web').disabled = true;
+            await Distiller.sendMessageStream('请基于以上联网搜索结果回答：' + text, chatHistory.slice(0,-1), currentKB?.id||null, activeSkillId);
+
+            document.querySelectorAll('.msg[data-temp]').forEach(e => e.remove());
+        } else {
+            addMessage('system', '搜索无结果，尝试直接回答...');
+            chatHistory.push({role:'user', content: text});
+            isStreaming = true;
+            document.getElementById('btn-send').disabled = true;
+            document.getElementById('btn-web').disabled = true;
+            await Distiller.sendMessageStream(text, chatHistory.slice(0,-1), currentKB?.id||null, activeSkillId);
+        }
+    } catch (err) {
+        onStreamToken('\n\n❌ 搜索失败: ' + toErr(err), false, true);
+    }
+    document.getElementById('btn-send').disabled = false;
+    document.getElementById('btn-web').disabled = false;
+    isStreaming = false;
+}
+
+function clearChat() {
+    chatHistory = [];
+    streamMsgDiv = null;
+    isStreaming = false;
+    activeSkillId = null;
+    document.getElementById('messages').innerHTML = '';
+    document.getElementById('btn-send').disabled = false;
+    document.getElementById('btn-web').disabled = false;
+    addMessage('system', '对话已清空，Skill 已重置。');
+    loadSkills();
+}
+
+// ===== 消息渲染 =====
+function addMessage(role, text, isTemp, isMarkdown) {
+    // 自动修复 [object Object] 问题
+    if (text && typeof text === 'object') text = toErr(text);
+    const div = document.createElement('div');
+    div.className = 'msg '+role+'-msg';
+    if (isTemp) div.dataset.temp='1';
+    if (isMarkdown) { div.classList.add('markdown-body'); div.innerHTML = renderMarkdown(text); }
+    else { div.innerHTML = '<p>'+escHtml(text)+'</p>'; }
+    // AI 消息加复制按钮
+    if ((role === 'ai' || (isMarkdown)) && !isTemp) {
+        const btn = document.createElement('button');
+        btn.className = 'btn-copy';
+        btn.textContent = '📋';
+        btn.title = '复制内容';
+        btn.onclick = function() {
+            const rawText = text || div.textContent || '';
+            navigator.clipboard.writeText(rawText).then(() => {
+                btn.textContent = '✅'; setTimeout(() => btn.textContent='📋', 1500);
+            }).catch(() => {
+                // fallback for older browsers
+                const ta = document.createElement('textarea');
+                ta.value = rawText; ta.style.position='fixed'; ta.style.left='-9999px';
+                document.body.appendChild(ta); ta.select();
+                document.execCommand('copy'); document.body.removeChild(ta);
+                btn.textContent = '✅'; setTimeout(() => btn.textContent='📋', 1500);
+            });
+        };
+        div.appendChild(btn);
+    }
+    document.getElementById('messages').appendChild(div);
+    scrollToBottom();
+    return div;
+}
+function scrollToBottom() {
+    const area = document.getElementById('chat-area');
+    area.scrollTop = area.scrollHeight;
+}
+function escHtml(s) {
+    if (!s) return '';
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ===== Markdown 渲染 =====
+function renderMarkdown(text) {
+    let html = '';
+    const lines = text.split('\n');
+    let inCode = false, codeBuf = '', codeLang = '';
+    let inList = false;
+
+    function flushList() { if (inList) { html += '</ul>'; inList = false; } }
+
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+
+        if (line.startsWith('```')) {
+            if (!inCode) { flushList(); inCode = true; codeLang = line.slice(3).trim(); codeBuf = ''; }
+            else { html += '<pre><code class="lang-'+escHtml(codeLang)+'">'+escHtml(codeBuf.trimEnd())+'</code></pre>'; inCode = false; }
+            continue;
+        }
+        if (inCode) { codeBuf += line + '\n'; continue; }
+
+        if (/^### (.+)/.test(line)) { flushList(); html += '<h3>'+line.replace(/^### /,'')+'</h3>'; }
+        else if (/^## (.+)/.test(line)) { flushList(); html += '<h2>'+line.replace(/^## /,'')+'</h2>'; }
+        else if (/^# (.+)/.test(line)) { flushList(); html += '<h1>'+line.replace(/^# /,'')+'</h1>'; }
+        else if (/^---$/.test(line)) { flushList(); html += '<hr>'; }
+        else if (/^- (.+)/.test(line)) {
+            if (!inList) { html += '<ul>'; inList = true; }
+            html += '<li>'+_inlineMd(line.replace(/^- /,''))+'</li>';
+        }
+        else if (/^\d+\. (.+)/.test(line)) {
+            if (!inList) { html += '<ol>'; inList = true; }
+            html += '<li>'+_inlineMd(line.replace(/^\d+\. /,''))+'</li>';
+        }
+        else if (line.trim() === '') { flushList(); /* skip */ }
+        else { flushList(); html += '<p>'+_inlineMd(line)+'</p>'; }
+    }
+    flushList();
+    if (inCode) { html += '<pre><code>'+escHtml(codeBuf.trimEnd())+'</code></pre>'; }
+    return '<div class="md-content">'+html+'</div>';
+}
+function _inlineMd(s) {
+    s = escHtml(s);
+    s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
+    s = s.replace(/`(.+?)`/g, '<code>$1</code>');
+    return s;
+}
+</script>
+
+</body>
+</html>

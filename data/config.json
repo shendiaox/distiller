@@ -1,0 +1,8 @@
+{
+  "deepseek_api_key": "sk-f230982882284cd5bf1bc1f704645bbe",
+  "deepseek_model": "deepseek-chat",
+  "deepseek_base_url": "https://api.deepseek.com",
+  "http_timeout": 30,
+  "embedding_model": "all-MiniLM-L6-v2",
+  "retrieval_k": 5
+}

@@ -1,0 +1,11 @@
+dist/
+build/
+*.spec.bak
+__pycache__/
+*.pyc
+*.pyo
+data/chroma/
+data/distiller.db
+*.egg-info/
+bin/
+.buildozer/
